@@ -12,6 +12,11 @@ numpy = "*"
 pandas = "*"
 psycopg2 = "*"
 python-dotenv = "*"
+flask = "*"
+flask-sqlalchemy = "*"
+jsonify = "*"
+sklearn = "*"
+tensorflow = "*"
 
 [requires]
 python_version = "3.7"
