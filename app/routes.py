@@ -243,7 +243,7 @@ def build_plot(searched_song_id):
     knn.set_weights([np.array(norm_songs_features.T)])                    
 
     # prepare the info of the searched song
-    searched_song_array = pd.Series(searched_song_features).values.reshape(1,songs_features.shape[1])
+    searched_song_array = (pd.Series(searched_song_features).values / np.linalg.norm(pd.Series(searched_song_features).values)).reshape(1,songs_features.shape[1])
 
     # make the prediction
     prediction = knn.predict(searched_song_array)
@@ -260,7 +260,7 @@ def build_plot(searched_song_id):
     extendend_result['outcome'] = 1
     extendend_result.iloc[10,-1] = 0
     extendend_result = extendend_result[['acousticness','danceability','energy','instrumentalness',
-                        'key', 'liveness', 'loudness','mode','speechiness', 
+                        'key', 'liveness', 'loudness','mode','speechiness', 'tempo',
                         'time_signature','valence','outcome']]
 
     extendend_result_for_plot = extendend_result.T.reset_index()
