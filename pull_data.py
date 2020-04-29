@@ -95,6 +95,9 @@ class SpotBot():
 
         return dictionaries
 
+
+
+
 if __name__ == "__main__":
     
     sb = SpotBot()

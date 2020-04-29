@@ -17,6 +17,7 @@ flask-sqlalchemy = "*"
 jsonify = "*"
 sklearn = "*"
 tensorflow = "*"
+dash = "*"
 
 [requires]
 python_version = "3.7"
