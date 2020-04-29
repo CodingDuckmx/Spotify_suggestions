@@ -18,6 +18,8 @@ jsonify = "*"
 sklearn = "*"
 tensorflow = "*"
 dash = "*"
+matplotlib = "*"
+seaborn = "*"
 
 [requires]
 python_version = "3.7"
