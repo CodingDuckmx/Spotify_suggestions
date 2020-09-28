@@ -16,10 +16,10 @@ flask = "*"
 flask-sqlalchemy = "*"
 jsonify = "*"
 sklearn = "*"
-tensorflow = "*"
 dash = "*"
 matplotlib = "*"
 seaborn = "*"
+chart-studio = "*"
 
 [requires]
 python_version = "3.7"
