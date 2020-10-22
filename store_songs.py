@@ -1,91 +1,11 @@
+import os
 import psycopg2
 
 from dotenv import load_dotenv, find_dotenv
-import os
 from pull_data import SpotBot
 
 load_dotenv()
 
-
-# Database and Table creation
-
-def create_tables():
-
-    ''' Creates the table if it doesn't exists already.'''
-
-    try:
-        
-        # Stablishes the connection to the db.
-
-        connection = psycopg2.connect(user=os.environ.get('db_user'),
-                                    password=os.environ.get('db_password'),
-                                    host=os.environ.get('db_host'),
-                                    port=os.environ.get('db_port'),
-                                    database=os.environ.get('db_name'))
-
-        print('DB Connection:', connection)
-
-        # Create the cursor.
-
-        cursor = connection.cursor()
-        print('DB Cursor:', cursor)
-
-        query_00 = '''
-                CREATE TABLE IF NOT EXISTS songs (
-                    id SERIAL,
-                    song_id TEXT UNIQUE NOT NULL PRIMARY KEY,
-                    song_name TEXT,
-                    artists TEXT,
-                    album TEXT,
-                    danceability TEXT,
-                    energy TEXT,
-                    song_key TEXT,
-                    loudness TEXT,
-                    song_mode TEXT,
-                    speechiness TEXT,
-                    acousticness TEXT,
-                    instrumentalness TEXT,
-                    liveness TEXT,
-                    valence TEXT,
-                    tempo TEXT,
-                    song_type TEXT,
-                    duration_ms TEXT,
-                    time_signature TEXT,
-                    preview_url TEXT 
-                );
-        '''
-
-        cursor.execute(query_00)
-
-        connection.commit()
-      
-        query_0 = '''
-                CREATE TABLE IF NOT EXISTS users (
-                    id SERIAL,
-                    comb_id TEXT UNIQUE NOT NULL PRIMARY KEY,
-                    username TEXT,
-                    song_id TEXT
-                );
-        '''
-
-        cursor.execute(query_0)
-
-        connection.commit()
-      
-
-        return 'Success'
-    
-    except (Exception, psycopg2.Error) as error:
-        print('Error verifying or creating the table.')
-
-    finally:
-
-        if (connection):
-            cursor.close()
-            connection.close()
-            print('Connection closed.')
-
-    
 
 def login_and_store_songs(username='spotify'):
     
@@ -126,6 +46,17 @@ def login_and_store_songs(username='spotify'):
                 song_name = dictionary['song_name']
                 artists = dictionary['artists']
                 album = dictionary['album']
+                popularity = dictionary['popularity']
+
+                if dictionary['explicit'] == 'True':
+
+                    explicit = True
+                
+                else:
+
+                    explicit = False
+
+                track_number = dictionary['track_number']
                 danceability = dictionary['danceability']
                 energy = dictionary['energy']
                 song_key = dictionary['key']
@@ -142,10 +73,8 @@ def login_and_store_songs(username='spotify'):
                 time_signature = dictionary['time_signature']
                 preview_url = dictionary['preview_url']
 
-                comb_id = username + ' : ' + dictionary['song_id']
                 username = username
-                
-
+              
                 cursor.execute('''
                             SELECT song_id
                             FROM songs
@@ -162,6 +91,9 @@ def login_and_store_songs(username='spotify'):
                                 song_name,
                                 artists,
                                 album,
+                                popularity,
+                                explicit,
+                                track_number,
                                 danceability,
                                 energy,
                                 song_key,
@@ -197,13 +129,16 @@ def login_and_store_songs(username='spotify'):
                                 %s,
                                 %s,
                                 %s,
+                                %s,
+                                %s,
+                                %s,
                                 %s
                             );
                     '''
-                    cursor.execute(query_1,(song_id,song_name,artists,album,danceability,
-                    energy,song_key,loudness,song_mode,speechiness,acousticness,
-                    instrumentalness,liveness,valence,tempo,song_type,duration_ms,
-                    time_signature,preview_url))
+                    cursor.execute(query_1,(song_id,song_name,artists,album,popularity,
+                    explicit,track_number,danceability,energy,song_key,loudness,song_mode,
+                    speechiness,acousticness,instrumentalness,liveness,valence,tempo,
+                    song_type,duration_ms,time_signature,preview_url))
 
                     print('Song', song_id,' succesfully stored.')
                     print('Global count:', global_count,'; this count:', count)
@@ -224,36 +159,159 @@ def login_and_store_songs(username='spotify'):
                 else:
 
                     cursor.execute('''
-                            SELECT comb_id
+                            SELECT username, liked_songs, liked_artists
                             FROM users
-                            WHERE comb_id = %s
-                    ''', (comb_id,))
+                            WHERE username = %s
+                    ''', (username,))
 
-                    comb_exists = cursor.fetchall()
+                    user_exists = cursor.fetchone()
 
-                    if not comb_exists:
+                    if not user_exists:
 
                         query_2 = '''
                                 INSERT INTO users (
-                                    comb_id,
-                                    username,
-                                    song_id
+                                    username
                                     )
                                     VALUES (
-                                        %s,
-                                        %s,
                                         %s
                                     );
                                 '''
-                        cursor.execute(query_2,(comb_id,username,song_id))
+                        cursor.execute(query_2,(username,))
 
-                        print('User preference', comb_id,' succesfully stored.')
+                        print('User ', username,' succesfully added to the users table.')
 
                         connection.commit()
 
-                    else:
+                    try:
 
-                        print('User preference already in db.')
+                        if not user_exists[1]:
+
+                            query_3 = '''
+                                    UPDATE users
+                                    SET liked_songs = %s
+                                    WHERE username = %s;
+                                    '''
+
+                            cursor.execute(query_3,(song_id,username))
+
+                            print('User ', username,' succesfully added to the users table.')
+
+                            connection.commit()
+
+                        else:
+
+                            # Is the outcome a list?
+
+                            if ',' in user_exists[1]:
+                                
+                                # Turn the string into a list
+
+                                old_list = user_exists[1].split(',')
+
+                                # If the new song id not in the list, add it.
+
+                                if song_id not in old_list:
+
+                                    new_list = user_exists[1] + ',' + str(song_id)
+
+                                # Else, keep the old list that way.
+
+                                else:
+
+                                    new_list = user_exists[1]
+
+                            # Else, verify if the stored value is the same song id.
+
+                            else:
+
+                                if song_id == user_exists[1]:
+
+                                    new_list = user_exists[1]
+                                
+                                # If not, add it.
+
+                                else:
+
+                                    new_list = user_exists[1] + ',' + str(song_id)
+
+                            # Insert it to the db
+
+                            query_4 = '''
+                                    UPDATE users
+                                    SET liked_songs = %s
+                                    WHERE username = %s;
+                                    '''
+                            cursor.execute(query_4,(new_list,username))
+
+                            print('User ', username,' succesfully added to the users table.')
+
+                            connection.commit()
+
+                        if not user_exists[2]:
+
+                            query_5 = '''
+                                    UPDATE users
+                                    SET liked_artists = %s
+                                    WHERE username = %s;
+                                    '''
+
+                            cursor.execute(query_5,(artists,username))
+
+                            print('Artist ', artists,' succesfully added to user,', username ,' row.')
+
+                            connection.commit()
+
+                        else:
+
+                            # Is the outcome a list?
+
+                            if ',' in user_exists[2]:
+                                
+                                # Turn the string into a list
+
+                                old_list = user_exists[2].split(',')
+
+                                # If the new song id not in the list, add it.
+
+                                if artists not in old_list:
+
+                                    new_list = user_exists[2] + ',' + str(artists)
+
+                                # Else, keep the old list that way.
+
+                                else:
+
+                                    new_list = user_exists[2]
+
+                            # Else, verify if the stored value is the same song id.
+
+                            else:
+
+                                if artists == user_exists[2]:
+
+                                    new_list = user_exists[2]
+                                
+                                # If not, add it.
+
+                                else:
+
+                                    new_list = user_exists[2] + ',' + str(artists)
+
+                            # Insert it to the db
+
+                            query_6 = '''
+                                    UPDATE users
+                                    SET liked_artists = %s
+                                    WHERE username = %s;
+                                    '''
+                            cursor.execute(query_6,(new_list,username))
+
+                            print('User ', username,' succesfully added to the users table.')
+
+                            connection.commit()
+
+                    except (Exception, psycopg2.Error) as error:
+                        print('Error adding the artist', artists, 'or the song', song_id, 'to the user ', username,'.')
 
 
         except (Exception, psycopg2.Error) as error:
@@ -271,6 +329,5 @@ def login_and_store_songs(username='spotify'):
         # return 'Success'
 
 if __name__ == "__main__":
-       
-    create_tables()
-    login_and_store_songs(username='Just_mike09')
+
+    # login_and_store_songs(username='8ppupllf9815lb0jzdj4dot8x')
