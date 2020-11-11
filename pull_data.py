@@ -15,24 +15,83 @@ class SpotBot():
 
     def pull_playlists(self,username='spotify'):
 
+        '''
+        Will pull the playlists of the user.
+        Build a dictionary of playlists.
+        In each playlist will be a list of dictionaries
+        With the features of the songs of that playlist. 
+        '''
+
         client_credentials_manager = SpotifyClientCredentials(client_id=os.environ.get('client_id'), client_secret=os.environ.get('client_secret'))
 
         sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
-        playlists_id = []
+        # A dictionary with playlists id as keys and list of their songs as items.
+        playlists_dict = {}
 
-        playlists_items = sp.user_playlists(username)
+        # Pull the data from the API
+        api_outcomes = sp.user_playlists(username)
 
-        while playlists_items:
-            for playlist in range(len(playlists_items['items'])):
-                playlists_id.append(playlists_items['items'][playlist]['id'])
+        # While (more) data available:
+        while api_outcomes:
 
-            if playlists_items['next']:
-                playlists_items = sp.next(playlists_items)
+            # Trusting will get all playlist of the user
+            for i in range(api_outcomes['total']):
+                
+                playlist_id = api_outcomes['items'][i]['id']
+
+                if playlist_id not in playlists_dict:
+
+                    # Prepare the list of the playlist
+
+                    playlists_dict[playlist_id] = []
+
+                # Pull the songs of that playlist
+
+                api_outcomes_2 = sp.playlist_tracks(playlist_id=playlist_id)
+
+                
+                while api_outcomes_2:
+
+                    # Trusting will get all songs of the playlist
+                    for j in range(api_outcomes_2['total']):
+
+                        # Song dictionary for the info of the song
+                        song_dict = {key: None for key in ['song_id','song_name','artists','album','popularity','explicit','track_number',
+                        'danceability', 'energy', 'key', 'loudness', 'mode', 'speechiness', 'acousticness', 'instrumentalness',
+                        'liveness', 'valence', 'tempo', 'type',  'duration_ms', 'time_signature', 'preview_url']}
+
+                        song_dict['song_id'] = api_outcomes_2['items'][j]['track']['id']
+                        song_dict['song_id'] = api_outcomes_2['items'][j]['track']['id']
+                        song_dict['song_id'] = api_outcomes_2['items'][j]['track']['id']
+                        song_dict['song_id'] = api_outcomes_2['items'][j]['track']['id']
+                        song_dict['song_id'] = api_outcomes_2['items'][j]['track']['id']
+                        song_dict['song_id'] = api_outcomes_2['items'][j]['track']['id']
+                        song_dict['song_id'] = api_outcomes_2['items'][j]['track']['id']
+                        song_dict['song_id'] = api_outcomes_2['items'][j]['track']['id']
+
+
+
+
+                    if api_outcomes_2['next']:
+                        api_outcomes_2 = sp.next(api_outcomes_2)
+                    else:
+                        api_outcomes_2 = None
+
+
+            if api_outcomes['next']:
+                api_outcomes = sp.next(api_outcomes)
             else:
-                playlists_items = None
+                api_outcomes = None
         
-        return playlists_id
+        return playlists_dict
+
+
+
+        ###########################
+        #### Being deprecated #####
+        ####     starts       #####
+        ###########################
 
     def pull_songs_ids(self,username='spotify',playlist='37i9dQZF1DXcBWIGoYBM5M'):
 
@@ -49,6 +108,10 @@ class SpotBot():
 
         return 
 
+        ###########################
+        #### Being deprecated #####
+        #####     ends       ######
+        ###########################
 
     def pull_data(self,username='spotify',playlist='37i9dQZF1DXcBWIGoYBM5M'):
 
@@ -205,9 +268,9 @@ class SpotBot():
 if __name__ == "__main__":
     
     sb = SpotBot()
-    # playlists_id = sb.pull_playlists(username='slinky_duck')
+    playlists_id = sb.pull_playlists(username='slinky_duck')
     # print("Test of list of playlists id's:", playlists_id[:20])
-    sb.pull_songs_ids(username='slinky_duck',playlist='395EBEpBl4C2eOOnMHsj3i')
+    # sb.pull_songs_ids(username='slinky_duck',playlist='395EBEpBl4C2eOOnMHsj3i')
     # dictionary = sb.pull_data(username='spotify',playlist='37i9dQZF1DXcBWIGoYBM5M')
     # print("Test of result dictionaries: ",dictionaries)
 

@@ -56,6 +56,9 @@ def create_tables():
                     time_signature INT4,
                     year INT4,
                     preview_url VARCHAR(2048),
+                    coded_artists INT 4,
+                    cluster INT4,
+                    subcluster INT4,
                     similar_songs TEXT,
                     liked_by TEXT
                 );
@@ -69,6 +72,7 @@ def create_tables():
                 CREATE TABLE IF NOT EXISTS users (
                     id SERIAL,
                     username VARCHAR(2048) UNIQUE NOT NULL PRIMARY KEY,
+                    name VARCHAR(2048),
                     liked_songs TEXT,
                     suggested_songs TEXT,
                     liked_artists TEXT,
@@ -112,13 +116,13 @@ def store_dataset_songs():
 
     songs_dict = {}
 
-    with open('.\Kaggle Datasets\data.csv','r',encoding='UTF-8',newline='') as csvfile:
+    with open('.\Kaggle Datasets\kaggle_with_recommendations.csv','r',encoding='UTF-8',newline='') as csvfile:
         spamreader = csv.reader(csvfile, delimiter=',')
         for num, row in enumerate(spamreader):
             if num > 0:
 
                 # dropping the release date, not relevant
-                del row[-2]
+                del row[-6]
 
                 # adding the info to the dictionary
                 if row[0] not in songs_dict:
@@ -172,9 +176,17 @@ def store_dataset_songs():
                     valence,
                     tempo,
                     duration_ms,
-                    year
+                    year,
+                    coded_artists,
+                    similar_songs,
+                    cluster,
+                    subcluster
                     )
                 VALUES(
+                    %s,
+                    %s,
+                    %s,
+                    %s,
                     %s,
                     %s,
                     %s,
