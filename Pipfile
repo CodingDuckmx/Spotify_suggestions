@@ -19,6 +19,7 @@ matplotlib = "*"
 seaborn = "*"
 chart-studio = "*"
 django = "*"
+datetime = "*"
 
 [requires]
 python_version = "3.7"

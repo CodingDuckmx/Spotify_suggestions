@@ -51,12 +51,11 @@ def create_tables():
                     liveness FLOAT4,
                     valence FLOAT4,
                     tempo FLOAT4,
-                    song_type TEXT,
                     duration_ms INT4,
                     time_signature INT4,
                     year INT4,
                     preview_url VARCHAR(2048),
-                    coded_artists INT 4,
+                    coded_artists INT4,
                     cluster INT4,
                     subcluster INT4,
                     similar_songs TEXT,
@@ -90,6 +89,9 @@ def create_tables():
                 CREATE TABLE IF NOT EXISTS playlists (
                     id SERIAL,
                     playlist_id VARCHAR(2048) UNIQUE NOT NULL PRIMARY KEY,
+                    playlist_name VARCHAR(2048),
+                    added_date DATE,
+                    last_modified_date DATE,
                     listed_songs TEXT,
                     followed_by TEXT
                 );
@@ -116,7 +118,7 @@ def store_dataset_songs():
 
     songs_dict = {}
 
-    with open('.\Kaggle Datasets\kaggle_with_recommendations.csv','r',encoding='UTF-8',newline='') as csvfile:
+    with open('.\kaggle_with_recommendations.csv','r',encoding='UTF-8',newline='') as csvfile:
         spamreader = csv.reader(csvfile, delimiter=',')
         for num, row in enumerate(spamreader):
             if num > 0:
