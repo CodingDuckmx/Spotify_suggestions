@@ -2,6 +2,7 @@
 
 import ast
 import datetime
+import joblib
 import numpy as np
 import os
 import pandas as pd
@@ -47,11 +48,11 @@ class SpotBot():
                                     port=os.environ.get('db_port'),
                                     database=os.environ.get('db_name'))
 
-        # Create cursor
+        # Create cursor.
 
         cursor = connection.cursor()
 
-        # pull the data
+        # Pull data already in the db.
 
         cursor.execute('''
                         SELECT song_id
@@ -65,16 +66,20 @@ class SpotBot():
                         FROM playlists;
         ''')
 
-        cursor_outcome = cursor.fetchall()
+        if cursor.fetchall():
 
-        db_playlist_id_dct = {duet[0]:{'add_date':duet[1],'last_date':duet[2]} for duet in cursor_outcome}
+            db_playlist_id_dct = {duet[0]:{'add_date':duet[1],'last_date':duet[2]} for duet in cursor.fetchall()}
+
+        else:
+
+            db_playlist_id_dct = {}
 
         client_credentials_manager = SpotifyClientCredentials(client_id=os.environ.get('client_id'), client_secret=os.environ.get('client_secret'))
 
         sp = spotipy.Spotify(client_credentials_manager=client_credentials_manager)
 
         # A dictionary with playlists id as keys and list of their songs as items.
-        playlists_dict = {'index_of_live_pl':[]}
+        playlists_dict = {'list_of_live_pl':[],'some_of_liked_songs':[]}
 
         # Pull the data from the API
         api_outcomes = sp.user_playlists(username)
@@ -90,7 +95,7 @@ class SpotBot():
 
                 # Add the playlist_id to the index of live playlists:
 
-                playlists_dict['index_of_live_pl'].append(playlist_id)
+                playlists_dict['list_of_live_pl'].append(playlist_id)
 
                 # verify if the playlist is already in the database
                 # and if so, the last modification was up to yesterday.
@@ -110,7 +115,7 @@ class SpotBot():
 
                         # If we are updating the playlist, change the value of new.
 
-                        if cursor_outcome:
+                        if db_playlist_id_dct:
                             
                             if playlist_id in db_playlist_id_dct:
 
@@ -159,6 +164,7 @@ class SpotBot():
                                 song_dict['track_number'] = api_outcomes_2['items'][j]['track']['track_number']
                                 song_dict['duration_ms'] = api_outcomes_2['items'][j]['track']['duration_ms']
                                 song_dict['preview_url'] = api_outcomes_2['items'][j]['track']['preview_url']
+                                song_dict['year'] = api_outcomes_2['items'][j]['track']['album']['release_date'][:4]
 
                                 # Due a song could have more than one artist.
                                 # Build a list of artists 
@@ -191,6 +197,7 @@ class SpotBot():
 
                                 print(f'This song {song_name} is already in the db.')
 
+                            playlists_dict['some_of_liked_songs'].append(song_id)
                             playlists_dict[playlist_id]['songs_list'].append(song_dict)
 
                         if api_outcomes_2['next']:
@@ -202,8 +209,7 @@ class SpotBot():
 
                 else:
 
-                    print(f'This playlist {playlist_name} is already in the db.')
-
+                    print(f'This playlist {playlist_name} is relatively new to the db.')
 
             if api_outcomes['next']:
                 api_outcomes = sp.next(api_outcomes)
@@ -225,6 +231,7 @@ class SpotBot():
 
         return playlists_dict
 
+  
 
     def store_songs(self,username='spotify',pl_dict=None):
 
@@ -240,6 +247,24 @@ class SpotBot():
 
             pl_dict = self.pull_playlists(username=username)
 
+        # Unfold the scalers and models :
+
+        stdscaler = joblib.load('stdscalerpckl.pkl')
+        stdscaler_0 = joblib.load('stdscalerpckl_0.pkl')
+        stdscaler_1 = joblib.load('stdscalerpckl_1.pkl')
+        stdscaler_2 = joblib.load('stdscalerpckl_2.pkl')
+        stdscaler_3 = joblib.load('stdscalerpckl_3.pkl')
+
+        scalers_list = [stdscaler_0,stdscaler_1,stdscaler_2,stdscaler_3]
+
+        model = joblib.load('modelpckl.pkl')
+        model_0 = joblib.load('modelpckl_0.pkl')
+        model_1 = joblib.load('modelpckl_1.pkl')
+        model_2 = joblib.load('modelpckl_2.pkl')
+        model_3 = joblib.load('modelpckl_3.pkl')
+
+        models_list = [model_0,model_1,model_2,model_3]
+
         # Stablish connection to the db
 
         connection = psycopg2.connect(user=os.environ.get('db_user'),
@@ -252,13 +277,13 @@ class SpotBot():
 
         cursor = connection.cursor()
 
-        for playlist_id in pl_dict:
+        for playlist_id in [x for x in pl_dict.keys()][2:]:
 
             # Adding a brand new playlist to the db.
             if pl_dict[playlist_id]['new']:
 
                 query_values = (playlist_id,pl_dict[playlist_id]['name'],datetime.date.today(),
-                          datetime.date.today(),str([song['song_id'] for song in pl_dict[playlist_id]['songs_list']]),str([str(username)]))
+                          datetime.date.today(),[song['song_id'] for song in pl_dict[playlist_id]['songs_list']],[username])
 
                 query_insert_new_pl = '''
                     INSERT INTO playlists (
@@ -307,7 +332,7 @@ class SpotBot():
                     playlist_followers.append(username)
 
         
-                query_values = (datetime.date.today(),str([song['song_id'] for song in pl_dict[playlist_id]['songs_list']]),str(playlist_followers),'4aNdXj7njcOe7l0H9Fw9AS')
+                query_values = (datetime.date.today(),[song['song_id'] for song in pl_dict[playlist_id]['songs_list']],playlist_followers,playlist_id)
 
                 query_update_not_new_pl = '''
                     UPDATE playlists
@@ -327,23 +352,239 @@ class SpotBot():
 
                     print(e)
 
-            # Update the current following playlists of the user
+            # Does the user exist in the db?
 
-            query_update_following_pl = '''
-                UPDATE users
-                SET following_playlists = %s
+            query_search_user = '''
+                SELECT id
+                FROM users
                 WHERE username = %s
             '''
 
-            try:
+            cursor.execute(query_search_user,(username,))
 
-                cursor.execute(query_update_following_pl,username)
+            if not cursor.fetchone():
 
-                connection.commit()                  
+                # Add the current user and their following playlists.
 
-            except psycopg2.OperationalError as e: 
+                query_add_user_n_following_pl = '''
+                                        INSERT INTO users(
+                                            username,
+                                            liked_songs,
+                                            following_playlists
+                    )
+                                        VALUES (
+                                            %s,
+                                            %s,
+                                            %s
+                    );
+                '''
 
-                print(e)
+                try:
+
+                    cursor.execute(query_add_user_n_following_pl,(username,pl_dict['some_of_liked_songs'],pl_dict['list_of_live_pl']))
+
+                    connection.commit()                  
+
+                except psycopg2.OperationalError as e: 
+
+                    print(e)
+            
+            else:
+
+                # Update the current following playlists of the user
+
+                query_update_following_pl = '''
+                    UPDATE users
+                    SET following_playlists = %s
+                    WHERE username = %s
+                '''
+
+                try:
+
+                    cursor.execute(query_update_following_pl,(pl_dict['list_of_live_pl'],username))
+
+                    connection.commit()                  
+
+                except psycopg2.OperationalError as e: 
+
+                    print(e)
+
+            # Now, will insert the songs features to the db
+            # For adding the liked_by data, I think I'll pospone this
+            # willing to have another more efficient way.
+
+
+            for song_dict in pl_dict[playlist_id]['songs_list']:
+
+                # this means the song is not in the db yet. 
+                if 'artists' in song_dict:
+
+                    # Verify if the artists combination is in the database.
+
+                    cursor.execute('''
+                                SELECT coded_artists
+                                FROM songs
+                                WHERE artists = %s;
+                    ''',(str(song_dict['artists'])[1:-1],))
+                    try:
+
+                        if cursor.fetchone():
+                            
+                            
+
+                            song_dict['coded_artists'] = cursor.fetchone()[0]
+
+                        else:
+
+                            # If the artist combination is new to the db
+                            # we have to assing a code to this combination
+
+                            cursor.execute('''
+                                    SELECT MAX(coded_artists)
+                                    FROM songs;
+                            ''')
+
+                            song_dict['coded_artists'] = int(cursor.fetchone()[0]) + 1
+
+
+
+                        song_vector = np.array((song_dict['coded_artists'],song_dict['popularity'], song_dict['danceability'], song_dict['energy'], song_dict['song_key'], song_dict['loudness'], song_dict['song_mode'],
+                            song_dict['speechiness'], song_dict['acousticness'], song_dict['instrumentalness'], song_dict['liveness'], song_dict['valence'], song_dict['tempo'], song_dict['duration_ms'], song_dict['year']))
+
+                    except:
+
+                        cursor.close()
+                        connection.close()
+                        breakpoint()
+
+                    song_dict['cluster'] = model.predict(stdscaler.transform(song_vector.reshape(1,-1)))[0].item()
+
+                    song_dict['subcluster'] = models_list[song_dict['cluster']].predict(scalers_list[song_dict['cluster']].transform(song_vector.reshape(1,-1)))[0].item()
+
+
+                    cursor.execute('''
+                                SELECT coded_artists, popularity, danceability, energy, song_key, loudness, song_mode,
+                                        speechiness, acousticness, instrumentalness, liveness, valence, tempo, duration_ms, year
+                                FROM songs
+                                WHERE cluster = %s AND 
+                                    subcluster = %s;
+                                    ''',(song_dict['cluster'],song_dict['subcluster']))
+
+                    db = np.array(cursor.fetchall())
+
+                    cursor.execute('''
+                                SELECT song_id
+                                FROM songs
+                                WHERE cluster = %s AND 
+                                    subcluster = %s;
+                                    ''',(song_dict['cluster'],song_dict['subcluster']))
+
+                    songs_inside_subcluster = [item[0] for item in cursor.fetchall()]        
+
+                    # Scale and normalize the vector song and the matrix of songs:
+
+                    scaled_db = scalers_list[song_dict['cluster']].transform(db)
+                    
+                    norm_db = scaled_db / np.linalg.norm(scaled_db)
+                    
+                    scaled_song_vector = scalers_list[song_dict['cluster']].transform(song_vector.reshape(1,-1))
+
+                    norm_song_vector = scaled_song_vector / np.linalg.norm(scaled_song_vector)
+
+                    similarities = norm_db.dot(norm_song_vector.T)
+
+                    similar_songs = {}
+                    
+                    # In this moment, the db will not be updated with similarities backward. 
+
+                    for i, song_inside_id in enumerate(songs_inside_subcluster):
+
+                        if song_inside_id != song_dict['song_id']:
+
+                            if similarities[i] >= 0.75:
+
+                                if similarities[i] not in similar_songs:
+
+                                    similar_songs[similarities[i]] = []
+                                
+                                similar_songs[similarities[i]].append(song_inside_id)
+
+                    if similar_songs:
+
+                        values_to_insert = (song_dict['song_id'],song_dict['song_name'], str(song_dict['artists'])[1:-1],song_dict['popularity'], song_dict['explicit'], song_dict['danceability'], song_dict['energy'], song_dict['song_key'], song_dict['loudness'], song_dict['song_mode'],
+                                    song_dict['speechiness'], song_dict['acousticness'], song_dict['instrumentalness'], song_dict['liveness'], song_dict['valence'], song_dict['tempo'], song_dict['duration_ms'], song_dict['year'],song_dict['coded_artists'],similar_songs,
+                                    song_dict['cluster'],song_dict['subcluster'])
+
+                    else:
+
+                        values_to_insert = (song_dict['song_id'],song_dict['song_name'], str(song_dict['artists'])[1:-1],song_dict['popularity'], song_dict['explicit'], song_dict['danceability'], song_dict['energy'], song_dict['song_key'], song_dict['loudness'], song_dict['song_mode'],
+                                    song_dict['speechiness'], song_dict['acousticness'], song_dict['instrumentalness'], song_dict['liveness'], song_dict['valence'], song_dict['tempo'], song_dict['duration_ms'], song_dict['year'],song_dict['coded_artists'],None,
+                                    song_dict['cluster'],song_dict['subcluster'])
+
+                    query_insert_song = '''
+                        INSERT INTO songs (
+                            song_id,
+                            song_name,
+                            artists,
+                            popularity,
+                            explicit,
+                            danceability,
+                            energy,
+                            song_key,
+                            loudness,
+                            song_mode,
+                            speechiness,
+                            acousticness,
+                            instrumentalness,
+                            liveness,
+                            valence,
+                            tempo,
+                            duration_ms,
+                            year,
+                            coded_artists,
+                            similar_songs,
+                            cluster,
+                            subcluster
+                            )
+                        VALUES(
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s,
+                            %s
+                        ); 
+                        '''
+
+                    try:
+
+                        cursor.execute(query_insert_song,values_to_insert)
+                        
+                        connection.commit()
+
+                    except (Exception, psycopg2.Error) as error:
+
+                        print(f"There was an error with the song: {song_dict['song_id']}")
+                        print(error)
+
+
+
 
 
         # Finishes the connection to the db.
@@ -353,6 +594,8 @@ class SpotBot():
             cursor.close()
             connection.close()
             print('Connection closed.')
+
+        # breakpoint()
 
         ###########################
         #### Being deprecated #####
@@ -536,13 +779,15 @@ if __name__ == "__main__":
     '''
     some usernames:
     One playlist username = 8ppupllf9815lb0jzdj4dot8x
+    imsammwalker
+
     '''
     #####
 
     sb = SpotBot()
     # playlists_dict = sb.pull_playlists(username='8ppupllf9815lb0jzdj4dot8x')
     # print("Test of the dict of playlists:", playlists_dict)
-    sb.store_songs(username='8ppupllf9815lb0jzdj4dot8x')
+    sb.store_songs(username='slinky_duck')
     # breakpoint()
     # sb.pull_songs_ids(username='slinky_duck',playlist='395EBEpBl4C2eOOnMHsj3i')
     # dictionary = sb.pull_data(username='spotify',playlist='37i9dQZF1DXcBWIGoYBM5M')

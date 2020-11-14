@@ -179,10 +179,10 @@ def store_dataset_songs():
                     tempo,
                     duration_ms,
                     year,
-                    coded_artists,
-                    similar_songs,
                     cluster,
-                    subcluster
+                    subcluster,
+                    coded_artists,
+                    similar_songs
                     )
                 VALUES(
                     %s,
@@ -214,13 +214,20 @@ def store_dataset_songs():
             connection.commit()
             count += 1
 
-        except:
+        except (Exception, psycopg2.Error) as error:
             print(f'The song {key} was not succesfully added.')
+            print(f'Error {error}')
+            
+            cursor.close()
+            connection.close()
+
+            breakpoint()
 
     print(f'{count} songs were succesfully added. This is a {count / len(songs_dict)*100}% of total')
 
     if (connection):
 
+        cursor.close()
         connection.close()
         print('Connection closed.')
 

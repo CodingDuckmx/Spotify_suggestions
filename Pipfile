@@ -20,6 +20,7 @@ seaborn = "*"
 chart-studio = "*"
 django = "*"
 datetime = "*"
+scikit-learn = "==0.22.1"
 
 [requires]
 python_version = "3.7"
