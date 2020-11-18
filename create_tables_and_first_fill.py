@@ -129,6 +129,8 @@ def store_dataset_songs():
                 # adding the info to the dictionary
                 if row[0] not in songs_dict:
 
+                    row[2] = list(row[2].split(','))
+
                     songs_dict[row[0]] = row
 
     try:
