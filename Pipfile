@@ -21,6 +21,7 @@ chart-studio = "*"
 django = "*"
 datetime = "*"
 scikit-learn = "==0.22.1"
+kneed = "*"
 
 [requires]
 python_version = "3.7"
