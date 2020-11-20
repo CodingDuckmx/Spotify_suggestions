@@ -4,7 +4,7 @@ import ast
 import datetime
 import joblib
 import numpy as np
-import os
+import os, os.path
 import pandas as pd
 import pickle
 import psycopg2
@@ -14,7 +14,7 @@ import spotipy
 from dotenv import load_dotenv, find_dotenv
 from kneed import KneeLocator
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 from spotipy.oauth2 import SpotifyClientCredentials
 
 load_dotenv()
@@ -244,30 +244,51 @@ class SpotBot():
 
         count_errors = 0
 
-        # if username == 'spotify':
+        if username == 'spotify':
 
-        #     return 'Spotify is not a real user, try a real user/person.'
+            return 'Spotify is not a real user, try a real user/person.'
 
         pl_dict = self.pull_playlists(username=username)
 
         # Unfold the scalers and models :
 
-        stdscaler = joblib.load('stdscalerpckl.pkl')
-        stdscaler_0 = joblib.load('stdscalerpckl_0.pkl')
-        stdscaler_1 = joblib.load('stdscalerpckl_1.pkl')
-        stdscaler_2 = joblib.load('stdscalerpckl_2.pkl')
-        stdscaler_3 = joblib.load('stdscalerpckl_3.pkl')
+        scalers_list = []
+        models_list = []
 
-        scalers_list = [stdscaler_0,stdscaler_1,stdscaler_2,stdscaler_3]
+        scalers_list_names = [name for name in os.listdir('pickles/scalers')]
+        models_list_names = [name for name in os.listdir('pickles/models')]
 
-        model = joblib.load('modelpckl.pkl')
-        model_0 = joblib.load('modelpckl_0.pkl')
-        model_1 = joblib.load('modelpckl_1.pkl')
-        model_2 = joblib.load('modelpckl_2.pkl')
-        model_3 = joblib.load('modelpckl_3.pkl')
+        scalers_list_names.sort()
+        models_list_names.sort()
 
-        models_list = [model_0,model_1,model_2,model_3]
+        for name in scalers_list_names:
 
+            scalers_list.append(joblib.load('pickles/scalers/' + name))
+
+        for name in models_list_names:
+
+            models_list.append(joblib.load('pickles/models/' + name))
+
+
+### Starting: Considering to be removed ###
+        # stdscaler = joblib.load('stdscalerpckl.pkl')
+        # stdscaler_0 = joblib.load('stdscalerpckl_0.pkl')
+        # stdscaler_1 = joblib.load('stdscalerpckl_1.pkl')
+        # stdscaler_2 = joblib.load('stdscalerpckl_2.pkl')
+        # stdscaler_3 = joblib.load('stdscalerpckl_3.pkl')
+
+        # scalers_list = [stdscaler_0,stdscaler_1,stdscaler_2,stdscaler_3]
+
+        # model = joblib.load('modelpckl.pkl')
+        # model_0 = joblib.load('modelpckl_0.pkl')
+        # model_1 = joblib.load('modelpckl_1.pkl')
+        # model_2 = joblib.load('modelpckl_2.pkl')
+        # model_3 = joblib.load('modelpckl_3.pkl')
+
+        # models_list = [model_0,model_1,model_2,model_3]
+### Finishing: considering to be removed ###
+        
+        
         # Stablish connection to the db
 
         connection = psycopg2.connect(user=os.environ.get('db_user'),
@@ -472,16 +493,16 @@ class SpotBot():
 
                         song_dict['coded_artists'] = int(cursor.fetchone()[0]) + 1
 
-                    song_vector = np.array((song_dict['coded_artists'],song_dict['popularity'], song_dict['danceability'], song_dict['energy'], song_dict['song_key'], song_dict['loudness'], song_dict['song_mode'],
+                    song_vector = np.array((song_dict['coded_artists'],song_dict['popularity'], song_dict['explicit'], song_dict['danceability'], song_dict['energy'], song_dict['song_key'], song_dict['loudness'], song_dict['song_mode'],
                         song_dict['speechiness'], song_dict['acousticness'], song_dict['instrumentalness'], song_dict['liveness'], song_dict['valence'], song_dict['tempo'], song_dict['duration_ms'], song_dict['year']),dtype=float)
 
 
-                    song_dict['cluster'] = model.predict(stdscaler.transform(song_vector.reshape(1,-1)))[0].item()
+                    song_dict['cluster'] = models_list[0].predict(scalers_list[0].transform(song_vector.reshape(1,-1)))[0].item()
 
                     song_dict['subcluster'] = models_list[song_dict['cluster']].predict(scalers_list[song_dict['cluster']].transform(song_vector.reshape(1,-1)))[0].item()
 
                     cursor.execute('''
-                                SELECT coded_artists, popularity, danceability, energy, song_key, loudness, song_mode,
+                                SELECT coded_artists, popularity, explicit, danceability, energy, song_key, loudness, song_mode,
                                         speechiness, acousticness, instrumentalness, liveness, valence, tempo, duration_ms, year
                                 FROM songs
                                 WHERE cluster = %s AND 
@@ -507,7 +528,7 @@ class SpotBot():
 
                     scaled_db = scalers_list[song_dict['cluster']].transform(db)
                     
-                    norm_db = scaled_db / np.linalg.norm(scaled_db, keepdims=True)
+                    norm_db = scaled_db / np.linalg.norm(scaled_db, axis=1, keepdims=True)
                     
                     scaled_song_vector = scalers_list[song_dict['cluster']].transform(song_vector.reshape(1,-1))
 
@@ -536,7 +557,7 @@ class SpotBot():
                     if similar_songs:
 
                         values_to_insert = (song_dict['song_id'],song_dict['song_name'], song_dict['artists'],song_dict['popularity'], song_dict['explicit'], song_dict['danceability'], song_dict['energy'], song_dict['song_key'], song_dict['loudness'], song_dict['song_mode'],
-                                    song_dict['speechiness'], song_dict['acousticness'], song_dict['instrumentalness'], song_dict['liveness'], song_dict['valence'], song_dict['tempo'], song_dict['duration_ms'], song_dict['year'],song_dict['coded_artists'],similar_songs,
+                                    song_dict['speechiness'], song_dict['acousticness'], song_dict['instrumentalness'], song_dict['liveness'], song_dict['valence'], song_dict['tempo'], song_dict['duration_ms'], song_dict['year'],song_dict['coded_artists'],str(similar_songs),
                                     song_dict['cluster'],song_dict['subcluster'])
 
                     else:
@@ -691,7 +712,7 @@ class SpotBot():
         # turn the list into an array, to be suitable for the next steps
         clustering_dict[label]['features'] = np.array(clustering_dict[label]['features'])
 
-        return clustering_dict, songs_dict
+        return clustering_dict, songs_dict, model, std_scaler
 
     def __find_similar_songs(self, clustering_dict, songs_dict, similarity_threshold):
 
@@ -722,8 +743,6 @@ class SpotBot():
 
 
 
-        
-
     def update_similarities(self):
 
         '''
@@ -746,7 +765,8 @@ class SpotBot():
 
         cursor.execute('''
                     SELECT song_id,
-                    coded_artists,
+                    song_name,
+                    artists,
                     popularity,
                     explicit,
                     danceability,
@@ -767,19 +787,46 @@ class SpotBot():
 
         cursor_outcome = cursor.fetchall()
 
-        songs_dict = {outcome[0]:{'clustering':None,'subclustering':None,'similar_songs':{}} for outcome in cursor_outcome}
+        songs_dict = {outcome[0]:{'song_name':outcome[1],'coded_artists':None,'clustering':None,'subclustering':None,'similar_songs':{}} for outcome in cursor_outcome}
 
         songs_id_list = [x for x in songs_dict.keys()]
 
-        songs_features = np.array([outcome[1:] for outcome in cursor_outcome])
+        artists = [outcome[2] for outcome in cursor_outcome]
+
+        le = LabelEncoder()
+
+        coded_artists = le.fit_transform(artists)
+
+        songs_features = [list(outcome[2:]) for outcome in cursor_outcome]
+
+        for i, row in enumerate(songs_features):
+
+            row[0] =  coded_artists[i]
+
+            songs_dict[songs_id_list[i]]['coded_artists'] = coded_artists[i].item()
+
+        songs_features = np.array(songs_features, dtype=float)
 
         # Find the first clustering
-        clustering_dict, songs_dict = self.__db_clustering(songs_features,len(songs_features[0])-2,songs_dict,'clustering',songs_id_list)
+        clustering_dict, songs_dict, model_instance, std_scaler_instance = self.__db_clustering(songs_features,len(songs_features[0])-2,songs_dict,'clustering',songs_id_list)
+
+        
+        # Pickle the model
+        joblib.dump(model_instance, 'pickles/models/modelpckl.pkl')
+
+        # Pickle the scaler
+        joblib.dump(std_scaler_instance, 'pickles/scalers/stdscalerpckl.pkl')
 
         for i in clustering_dict.keys():
 
             songs_id_list = clustering_dict[i]['songs_ids']
-            clustering_dict[i]['subclustering'], songs_dict = self.__db_clustering(clustering_dict[i]['features'],len(songs_features[0])-2,songs_dict,'subclustering',songs_id_list)
+            clustering_dict[i]['subclustering'], songs_dict, model_instance, std_scaler_instance = self.__db_clustering(clustering_dict[i]['features'],len(songs_features[0])-2,songs_dict,'subclustering',songs_id_list)
+
+            # Pickle the model
+            joblib.dump(model_instance, 'pickles/models/modelpckl_'+ str(i) +'.pkl')
+
+            # Pickle the scaler
+            joblib.dump(std_scaler_instance, 'pickles/scalers/stdscalerpckl_'+ str(i) +'.pkl')
 
             for j in clustering_dict[i]['subclustering'].keys():
 
@@ -815,20 +862,20 @@ class SpotBot():
 
         for song_id in songs_dict.keys():
 
-            tpl_list.append((song_id,songs_dict[song_id]['clustering'],songs_dict[song_id]['subclustering'],str(songs_dict[song_id]['similar_songs'])))
+            tpl_list.append((song_id,songs_dict[song_id]['coded_artists'],songs_dict[song_id]['clustering'],songs_dict[song_id]['subclustering'],str(songs_dict[song_id]['similar_songs'])))
 
         query = '''
                 UPDATE songs
-                SET cluster = songs.cluster,
-                    subcluster = songs.subcluster,
-                    similar_songs = songs.similar_songs
-                FROM (VALUES %s) AS data (song_id, cluster, subcluster, similar_songs)
-                WHERE songs.song_id = data.song_id;
+                SET coded_artists = data.coded_artists,
+                    cluster = data.cluster,
+                    subcluster = data.subcluster,
+                    similar_songs = data.similar_songs
+                FROM (VALUES %s) AS data (song_id, coded_artists, cluster, subcluster, similar_songs)
+                WHERE data.song_id = songs.song_id;
         '''
-
-
         psycopg2extras.execute_values(cursor,query,tpl_list)
 
+        connection.commit()
 
         if connection:
 
@@ -851,11 +898,11 @@ class SpotBot():
 
             if similarity:
 
-                for song_id in songs_dict[song_uri]['similar_songs'][list_of_similar]:
+                for song_id in songs_dict[song_uri]['similar_songs'][similarity]:
 
                     if song_id in recommended_songs:
 
-                        recommended_songs[song_id] = {}
+                        recommended_songs[song_id] = {'name':songs_dict[song_id]['song_name']}
 
         return recommended_songs
 
@@ -873,7 +920,7 @@ if __name__ == "__main__":
     '''
     #####
 
-    username = 'victorbesq'
+    username = 'rulo8817'
 
     username_list = ['8ppupllf9815lb0jzdj4dot8x','imsammwalker','12125120773','12124627674','12101981872','12143950223', 
                     '12135216693','12132279660','12100101104', 'denisselike','12178296539','22tbf4n6jbom3jvylao3jydbi',
@@ -893,11 +940,13 @@ if __name__ == "__main__":
     # sb.store_songs()
     # sb.store_songs(username=username)
     
-    # for user in username_list:
-    #     sb.store_songs(username=user)
+    for user in username_list:
+        sb.store_songs(username=user)
     # breakpoint()
 
 
-    # sb.update_similarities()
+    sb.update_similarities()
 
     sb.update_db_similarities_from_pickle()
+
+    # sb.find_similar_songs_from_pickle('4XTRWWCbB68WDeAHLfv2HP',10)
