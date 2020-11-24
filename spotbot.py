@@ -548,6 +548,8 @@ class SpotBot():
 
                             if song_inside_id != song_dict['song_id']:
 
+                                similarity = similarities[i][0]
+
                                 if similarity >= similarity_threshold:
 
                                     if similarity not in similar_songs:
@@ -715,8 +717,6 @@ class SpotBot():
             clustering_dict[label]['features'].append(array[i])
             clustering_dict[label]['songs_ids'].append(songs_id_list[i])
 
-### Verify if item() solves the problem of:
-### psycopg2.ProgrammingError: can't adapt type 'numpy.int32'
             songs_dict[songs_id_list[i]][looking_for] = label.item()
 
         # turn the list into an array, to be suitable for the next steps
@@ -724,10 +724,12 @@ class SpotBot():
 
         return clustering_dict, songs_dict, model, std_scaler
 
-    def __find_similar_songs(self, clustering_dict, songs_dict, similarity_threshold = .89):
+    def __find_similar_songs(self, clustering_dict,cluster, subcluster, similarity_threshold = .89):
 
         features = clustering_dict['features'] 
         songs_ids = clustering_dict['songs_ids']
+
+        songs_dict = {song_id:{'coded_artists':int(clustering_dict['features'][i][0]),'clustering':cluster,'subclustering':subcluster,'similar_songs':dict()} for i, song_id in enumerate(songs_ids)}
 
         std_scaler = StandardScaler()
 
@@ -770,6 +772,7 @@ class SpotBot():
 
                                 del songs_dict[song_id]['similar_songs'][similarity]
 
+        return songs_dict
 
     def update_similarities(self,similarity_threshold = 0.84):
 
@@ -778,6 +781,25 @@ class SpotBot():
         Divide the data into songs_id list and features array.
         
         '''
+
+        # Erase the previous pickles and joblibs.
+
+        scalers_list_names = [name for name in os.listdir('pickles/scalers')]
+        models_list_names = [name for name in os.listdir('pickles/models')]
+        dictionaries_list_names = [name for name in os.listdir('pickles/similarities_dictionaries')]
+
+        for file in scalers_list_names:
+
+            os.remove('pickles/scalers/' + file)
+
+        for file in models_list_names:
+
+            os.remove('pickles/models/' + file)
+
+        for file in dictionaries_list_names:
+
+            os.remove('pickles/similarities_dictionaries/' + file)
+
 
         # Connection
 
@@ -815,7 +837,7 @@ class SpotBot():
 
         cursor_outcome = cursor.fetchall()
 
-        songs_dict = {outcome[0]:{'song_name':outcome[1],'coded_artists':None,'clustering':None,'subclustering':None,'similar_songs':{}} for outcome in cursor_outcome}
+        songs_dict = {outcome[0]:{'song_name':outcome[1],'coded_artists':None,'clustering':None,'subclustering':None} for outcome in cursor_outcome}
 
         songs_id_list = [x for x in songs_dict.keys()]
 
@@ -832,7 +854,6 @@ class SpotBot():
 
         # Find the first clustering
         clustering_dict, songs_dict, model_instance, std_scaler_instance = self.__db_clustering(songs_features,len(songs_features[0])-2,songs_dict,'clustering',songs_id_list)
-
         
         # Pickle the model
         joblib.dump(model_instance, 'pickles/models/modelpckl.pkl')
@@ -840,24 +861,34 @@ class SpotBot():
         # Pickle the scaler
         joblib.dump(std_scaler_instance, 'pickles/scalers/stdscalerpckl.pkl')
 
+        del model_instance
+        del std_scaler_instance
+
         for i in clustering_dict.keys():
 
             songs_id_list = clustering_dict[i]['songs_ids']
             clustering_dict[i]['subclustering'], songs_dict, model_instance, std_scaler_instance = self.__db_clustering(clustering_dict[i]['features'],len(songs_features[0])-2,songs_dict,'subclustering',songs_id_list)
 
             # Pickle the model
-            joblib.dump(model_instance, 'pickles/models/modelpckl_'+ str(i) +'.pkl')
+            joblib.dump(model_instance, 'pickles/models/modelpckl_'+ str(i) + '.pkl')
 
             # Pickle the scaler
-            joblib.dump(std_scaler_instance, 'pickles/scalers/stdscalerpckl_'+ str(i) +'.pkl')
+            joblib.dump(std_scaler_instance, 'pickles/scalers/stdscalerpckl_'+ str(i) + '.pkl')
+
+            del model_instance
+            del std_scaler_instance
 
             for j in clustering_dict[i]['subclustering'].keys():
 
-                self.__find_similar_songs(clustering_dict[i]['subclustering'][j],songs_dict,similarity_threshold = similarity_threshold)
+                similarities_dict = self.__find_similar_songs(clustering_dict[i]['subclustering'][j], cluster = i, subcluster = j,similarity_threshold = similarity_threshold)
 
-        # Pickle the final songs similarities dict.
+                # Pickle the final songs similarities dict.
+                with open('pickles/similarities_dictionaries/songs_similarities_dict_' + str(i) + '_' + str(j) + '.p', 'wb') as f:
+                    pickle.dump(similarities_dict,f)
 
-        pickle.dump(songs_dict, open('songs_similarities_dict.p', 'wb'))
+                del similarities_dict
+
+        # pickle.dump(songs_dict, open('songs_similarities_dict.p', 'wb'))
 
         if connection:
 
@@ -865,9 +896,7 @@ class SpotBot():
             connection.close()
             print('Connection closed.')
 
-    def update_db_similarities_from_pickle(self):
-
-        songs_dict = pickle.load( open( 'songs_similarities_dict.p', 'rb') )
+    def update_db_similarities_from_pickles(self):
 
         # Stablish connection to the db
 
@@ -881,24 +910,34 @@ class SpotBot():
 
         cursor = connection.cursor()
 
-        tpl_list = list()
+        dictionaries_list_names = [name for name in os.listdir('pickles/similarities_dictionaries')]
 
-        for song_id in songs_dict.keys():
+        for file in dictionaries_list_names:
 
-            tpl_list.append((song_id,songs_dict[song_id]['coded_artists'],songs_dict[song_id]['clustering'],songs_dict[song_id]['subclustering'],str(songs_dict[song_id]['similar_songs'])))
+            songs_dict = pickle.load( open( 'pickles/similarities_dictionaries/' + file , 'rb') )
 
-        query = '''
-                UPDATE songs
-                SET coded_artists = data.coded_artists,
-                    cluster = data.cluster,
-                    subcluster = data.subcluster,
-                    similar_songs = data.similar_songs
-                FROM (VALUES %s) AS data (song_id, coded_artists, cluster, subcluster, similar_songs)
-                WHERE data.song_id = songs.song_id;
-        '''
-        psycopg2extras.execute_values(cursor,query,tpl_list)
+            tpl_list = list()
 
-        connection.commit()
+            for song_id in songs_dict.keys():
+
+                tpl_list.append((song_id,songs_dict[song_id]['coded_artists'].item(),songs_dict[song_id]['clustering'].item(),songs_dict[song_id]['subclustering'].item(),str(songs_dict[song_id]['similar_songs'])))
+
+            query = '''
+                    UPDATE songs
+                    SET coded_artists = data.coded_artists,
+                        cluster = data.cluster,
+                        subcluster = data.subcluster,
+                        similar_songs = data.similar_songs
+                    FROM (VALUES %s) AS data (song_id, coded_artists, cluster, subcluster, similar_songs)
+                    WHERE data.song_id = songs.song_id;
+            '''
+
+
+            psycopg2extras.execute_values(cursor,query,tpl_list)
+
+            connection.commit()
+
+
 
         if connection:
 
@@ -906,28 +945,28 @@ class SpotBot():
             connection.close()
             print('Connection closed.')
 
-    def find_similar_songs_from_pickle(self,song_uri,no_of_songs):
+    # def find_similar_songs_from_pickles(self,song_uri,no_of_songs):
 
-        '''
-        Unwrap the pickle, order the similar songs.
-        Return the most (no_of_songs) similar songs.
-        '''
+    #     '''
+    #     Unwrap the pickle, order the similar songs.
+    #     Return the most (no_of_songs) similar songs.
+    #     '''
 
-        songs_dict = pickle.load( open( 'songs_similarities_dict.p', 'rb') )
+    #     songs_dict = pickle.load( open( 'songs_similarities_dict.p', 'rb') )
 
-        recommended_songs = {}
+    #     recommended_songs = {}
 
-        for similarity in sorted(songs_dict[song_uri]['similar_songs'].keys(), reverse=True)[:no_of_songs]:
+    #     for similarity in sorted(songs_dict[song_uri]['similar_songs'].keys(), reverse=True)[:no_of_songs]:
 
-            if similarity:
+    #         if similarity:
 
-                for song_id in songs_dict[song_uri]['similar_songs'][similarity]:
+    #             for song_id in songs_dict[song_uri]['similar_songs'][similarity]:
 
-                    if song_id in recommended_songs:
+    #                 if song_id in recommended_songs:
 
-                        recommended_songs[song_id] = {'name':songs_dict[song_id]['song_name']}
+    #                     recommended_songs[song_id] = {'name':songs_dict[song_id]['song_name']}
 
-        return recommended_songs
+    #     return recommended_songs
 
 if __name__ == "__main__":
     
@@ -974,13 +1013,13 @@ if __name__ == "__main__":
     # sb.store_songs()
     # sb.store_songs(username=username)
     
-    # for user in username_list:
-    #     sb.store_songs(username=user)
+    for user in username_list:
+        sb.store_songs(username=user)
     # breakpoint()
 
 
     sb.update_similarities(similarity_threshold = 0.84)
 
-    # sb.update_db_similarities_from_pickle()
+    sb.update_db_similarities_from_pickles()
 
     # sb.find_similar_songs_from_pickle('4XTRWWCbB68WDeAHLfv2HP',10)
