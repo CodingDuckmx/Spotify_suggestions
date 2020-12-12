@@ -22,6 +22,8 @@ django = "*"
 datetime = "*"
 scikit-learn = "==0.22.1"
 kneed = "*"
+django-crispy-forms = "*"
+django-cleanup = "*"
 
 [requires]
 python_version = "3.7"

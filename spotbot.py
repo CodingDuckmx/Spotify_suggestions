@@ -920,7 +920,7 @@ class SpotBot():
 
             for song_id in songs_dict.keys():
 
-                tpl_list.append((song_id,songs_dict[song_id]['coded_artists'].item(),songs_dict[song_id]['clustering'].item(),songs_dict[song_id]['subclustering'].item(),str(songs_dict[song_id]['similar_songs'])))
+                tpl_list.append((song_id,songs_dict[song_id]['coded_artists'],songs_dict[song_id]['clustering'].item(),songs_dict[song_id]['subclustering'].item(),str(songs_dict[song_id]['similar_songs'])))
 
             query = '''
                     UPDATE songs
@@ -1013,12 +1013,12 @@ if __name__ == "__main__":
     # sb.store_songs()
     # sb.store_songs(username=username)
     
-    for user in username_list:
-        sb.store_songs(username=user)
+    # for user in username_list:
+        # sb.store_songs(username=user)
     # breakpoint()
 
 
-    sb.update_similarities(similarity_threshold = 0.84)
+    # sb.update_similarities(similarity_threshold = 0.84)
 
     sb.update_db_similarities_from_pickles()
 
