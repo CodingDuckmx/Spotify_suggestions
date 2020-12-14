@@ -3,31 +3,59 @@
 {% block content %}
     <h1>Song Matcher home!</h1>
     <div>
+
       <form method="POST" enctype="multipart/form-data">
         {% csrf_token %}
         <fieldset class="form-group">
-            <legend class="border-bottom mb-4">Profile Info</legend>
-            {{ u_form|crispy }}
-            {{ p_form|crispy }}
+            <legend class="border-bottom mb-4"> <i>Give us a shot</i>.</legend>
+            {{ form|crispy }}
         </fieldset>
         <div class="form-group">
-            <button class="btn btn-outline-info" type="submit">Update</button>
+            <p>Consider this is a project in <b>its alpha version</b>.</p>
+
+            {% if not similar_songs and not searched %}
+
+            <img width="480" height="360" src='https://media2.giphy.com/media/tqfS3mgQU28ko/giphy.gif' >
+            
+            {% endif %}
+
         </div>
+        <button class="btn btn-outline-info" type="submit">Search</button>
       </form>
 
     </div>
-    
-    {% for post in posts %}
-    <article class="media content-section">
-      <img class="rounded-circle article-img" src="{{ post.author.profile.image.url}}">
-      <div class="media-body">
-        <div class="article-metadata">
-          <a class="mr-2" href="#">{{ post.author }}</a>
-          <small class="text-muted">{{ post.date_posted|date:"F d, Y" }}</small>
-        </div>
-        <h2><a class="article-title" href="#">{{ post.title }}</a></h2>
-        <p class="article-content">{{ post.content }}</p>
+
+    <br>
+    <br>
+    <br>
+
+
+    {% if similar_songs %}
+
+      <div>
+   
+        <h3 class="border-bottom mb-4">These are some recommendations.</h3>
+
+        
+        {% for song_url in songs_urls %}
+
+          <div class="media-body">
+
+            <iframe src="{{ song_url }}" width="300" height="80" frameborder="0" allowtransparency="true" allow="encrypted-media"></iframe>
+
+          </div>
+
+        {% endfor %}
       </div>
-    </article>
-    {% endfor %}
+
+      {% endif %}
+
+      {% if not similar_songs and searched %}
+
+      <p>Sorry, we have no options this time. Try another?</p>
+
+      <img width="480" height="360" src='https://media.giphy.com/media/xUNd9FSoTS8CGC57mo/giphy.gif' >
+
+      {% endif %}
+
 {% endblock content %}

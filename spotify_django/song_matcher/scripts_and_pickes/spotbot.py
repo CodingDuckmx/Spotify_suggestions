@@ -255,19 +255,19 @@ class SpotBot():
         scalers_list = []
         models_list = []
 
-        scalers_list_names = [name for name in os.listdir('pickles/scalers')]
-        models_list_names = [name for name in os.listdir('pickles/models')]
+        scalers_list_names = [name for name in os.listdir('song_matcher/scripts_and_pickes/pickles/scalers')]
+        models_list_names = [name for name in os.listdir('song_matcher/scripts_and_pickes/pickles/models')]
 
         scalers_list_names.sort()
         models_list_names.sort()
 
         for name in scalers_list_names:
 
-            scalers_list.append(joblib.load('pickles/scalers/' + name))
+            scalers_list.append(joblib.load('song_matcher/scripts_and_pickes/pickles/scalers/' + name))
 
         for name in models_list_names:
 
-            models_list.append(joblib.load('pickles/models/' + name))
+            models_list.append(joblib.load('song_matcher/scripts_and_pickes/pickles/models/' + name))
 
 
 ### Starting: Considering to be removed ###
@@ -784,21 +784,21 @@ class SpotBot():
 
         # Erase the previous pickles and joblibs.
 
-        scalers_list_names = [name for name in os.listdir('pickles/scalers')]
-        models_list_names = [name for name in os.listdir('pickles/models')]
-        dictionaries_list_names = [name for name in os.listdir('pickles/similarities_dictionaries')]
+        scalers_list_names = [name for name in os.listdir('song_matcher/scripts_and_pickes/pickles/scalers')]
+        models_list_names = [name for name in os.listdir('song_matcher/scripts_and_pickes/pickles/models')]
+        dictionaries_list_names = [name for name in os.listdir('song_matcher/scripts_and_pickes/pickles/similarities_dictionaries')]
 
         for file in scalers_list_names:
 
-            os.remove('pickles/scalers/' + file)
+            os.remove('song_matcher/scripts_and_pickes/pickles/scalers/' + file)
 
         for file in models_list_names:
 
-            os.remove('pickles/models/' + file)
+            os.remove('song_matcher/scripts_and_pickes/pickles/models/' + file)
 
         for file in dictionaries_list_names:
 
-            os.remove('pickles/similarities_dictionaries/' + file)
+            os.remove('song_matcher/scripts_and_pickes/pickles/similarities_dictionaries/' + file)
 
 
         # Connection
@@ -856,10 +856,10 @@ class SpotBot():
         clustering_dict, songs_dict, model_instance, std_scaler_instance = self.__db_clustering(songs_features,len(songs_features[0])-2,songs_dict,'clustering',songs_id_list)
         
         # Pickle the model
-        joblib.dump(model_instance, 'pickles/models/modelpckl.pkl')
+        joblib.dump(model_instance, 'song_matcher/scripts_and_pickes/pickles/models/modelpckl.pkl')
 
         # Pickle the scaler
-        joblib.dump(std_scaler_instance, 'pickles/scalers/stdscalerpckl.pkl')
+        joblib.dump(std_scaler_instance, 'song_matcher/scripts_and_pickes/pickles/scalers/stdscalerpckl.pkl')
 
         del model_instance
         del std_scaler_instance
@@ -870,10 +870,10 @@ class SpotBot():
             clustering_dict[i]['subclustering'], songs_dict, model_instance, std_scaler_instance = self.__db_clustering(clustering_dict[i]['features'],len(songs_features[0])-2,songs_dict,'subclustering',songs_id_list)
 
             # Pickle the model
-            joblib.dump(model_instance, 'pickles/models/modelpckl_'+ str(i) + '.pkl')
+            joblib.dump(model_instance, 'song_matcher/scripts_and_pickes/pickles/models/modelpckl_'+ str(i) + '.pkl')
 
             # Pickle the scaler
-            joblib.dump(std_scaler_instance, 'pickles/scalers/stdscalerpckl_'+ str(i) + '.pkl')
+            joblib.dump(std_scaler_instance, 'song_matcher/scripts_and_pickes/pickles/scalers/stdscalerpckl_'+ str(i) + '.pkl')
 
             del model_instance
             del std_scaler_instance
@@ -883,7 +883,7 @@ class SpotBot():
                 similarities_dict = self.__find_similar_songs(clustering_dict[i]['subclustering'][j], cluster = i, subcluster = j,similarity_threshold = similarity_threshold)
 
                 # Pickle the final songs similarities dict.
-                with open('pickles/similarities_dictionaries/songs_similarities_dict_' + str(i) + '_' + str(j) + '.p', 'wb') as f:
+                with open('song_matcher/scripts_and_pickes/pickles/similarities_dictionaries/songs_similarities_dict_' + str(i) + '_' + str(j) + '.p', 'wb') as f:
                     pickle.dump(similarities_dict,f)
 
                 del similarities_dict
@@ -910,11 +910,11 @@ class SpotBot():
 
         cursor = connection.cursor()
 
-        dictionaries_list_names = [name for name in os.listdir('pickles/similarities_dictionaries')]
+        dictionaries_list_names = [name for name in os.listdir('song_matcher/scripts_and_pickes/pickles/similarities_dictionaries')]
 
         for file in dictionaries_list_names:
 
-            songs_dict = pickle.load( open( 'pickles/similarities_dictionaries/' + file , 'rb') )
+            songs_dict = pickle.load( open( 'song_matcher/scripts_and_pickes/pickles/similarities_dictionaries/' + file , 'rb') )
 
             tpl_list = list()
 
@@ -944,6 +944,42 @@ class SpotBot():
             cursor.close()
             connection.close()
             print('Connection closed.')
+
+    def pull_similar_songs_from_db(self,song_name,artist_name):
+
+        # Stablish connection to the db 
+
+        connection = psycopg2.connect(user=os.environ.get('db_user'),
+                                    password=os.environ.get('db_password'),
+                                    host=os.environ.get('db_host'),
+                                    port=os.environ.get('db_port'),
+                                    database=os.environ.get('db_name'))
+
+        # Create cursor
+
+        cursor = connection.cursor()
+
+        cursor.execute('''
+                    SELECT similar_songs
+                    FROM songs
+                    WHERE UPPER(artists) LIKE UPPER(%s)
+                    AND UPPER(song_name) LIKE UPPER(%s); 
+                    ''', ('{%' + artist_name + '%}', '%' + song_name + '%' ))
+     
+        cursor_outcome = cursor.fetchall()
+
+        if cursor_outcome:
+
+            songs_similarities_list = []
+            songs_similarities_dict = ast.literal_eval(cursor_outcome[0][0])
+            
+            for _, item in songs_similarities_dict.items():
+
+                songs_similarities_list += item
+
+            return songs_similarities_list
+        
+        return None
 
     # def find_similar_songs_from_pickles(self,song_uri,no_of_songs):
 
@@ -1011,14 +1047,14 @@ if __name__ == "__main__":
     # playlists_dict = sb.pull_playlists(username=username)
     # print("Test of the dict of playlists:", playlists_dict)
     # sb.store_songs()
-    # sb.store_songs(username=username)
+    sb.store_songs(username=username)
     
     # for user in username_list:
         # sb.store_songs(username=user)
     # breakpoint()
 
 
-    # sb.update_similarities(similarity_threshold = 0.84)
+    sb.update_similarities(similarity_threshold = 0.84)
 
     sb.update_db_similarities_from_pickles()
 
